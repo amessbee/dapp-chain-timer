@@ -1,32 +1,31 @@
 // @ts-check
 import { E } from '@endo/far';
 
+/**
+ * @import {Installation, Instance} from '@agoric/zoe/src/zoeService/utils';
+ * @import {TimerFn} from './chain-timer-contract';
+ */
+
 console.warn('start proposal module evaluating');
 
 /**
  * Core eval script to start contract
  *
- * @param {BootstrapPowers} permittedPowers
+ * @param {BootstrapPowers & TimePowers} permittedPowers
+ *
+ * @typedef {{
+ *   installation: PromiseSpaceOf<{ chainTimer: Installation<TimerFn>}>
+ *   instance: PromiseSpaceOf<{ chainTimer: Instance<TimerFn>}>
+ * }} TimePowers
  */
 export const startChainTimerContract = async permittedPowers => {
   console.error('startChainTimerContract()...');
   const {
-    consume: { board, chainStorage, startUpgradable, zoe, chainTimerService },
-    brand: {
-      consume: { IST: istBrandP },
-      // @ts-expect-error dynamic extension to promise space
-      produce: brandProducers,
-    },
-    issuer: {
-      consume: { IST: istIssuerP },
-      // @ts-expect-error dynamic extension to promise space
-      produce: issueProducers,
-    },
+    consume: { chainStorage, startUpgradable, chainTimerService },
     installation: {
       consume: { chainTimer: chainTimerInstallationP },
     },
     instance: {
-      // @ts-expect-error dynamic extension to promise space
       produce: { chainTimer: produceInstance },
     },
   } = permittedPowers;
@@ -38,31 +37,26 @@ export const startChainTimerContract = async permittedPowers => {
   );
 
   const storageNode = await E(chainStorage).makeChildNode('chainTimer');
-  const istIssuer = await istIssuerP;
 
   const terms = { maxTime: 100n };
 
   // agoricNames gets updated each time; the promise space only once XXXXXXX
   const installation = await chainTimerInstallationP;
+  const clock = await E(chainTimerService).getClock();
+  /** @type {Parameters<TimerFn>[1]} */
+  const privateArgs = {
+    storageNode,
+    clock,
+    timerService: chainTimerService,
+  };
 
   const { instance } = await E(startUpgradable)({
     installation,
-    issuerKeywordRecord: { Price: istIssuer },
     label: 'chainTimer',
     terms,
-    privateArgs: {
-      storageNode,
-      board,
-      timerService: chainTimerService,
-    },
+    privateArgs,
   });
   console.log('CoreEval script: started contract', instance);
-  const { brands, issuers } = await E(zoe).getTerms(instance);
-
-  console.log('CoreEval script: share via agoricNames:', {
-    brands,
-    issuers,
-  });
 
   produceInstance.reset();
   produceInstance.resolve(instance);
@@ -73,22 +67,11 @@ export const startChainTimerContract = async permittedPowers => {
 const chainTimerManifest = {
   [startChainTimerContract.name]: {
     consume: {
-      agoricNames: true,
-      board: true, // to publish boardAux info for NFT brand
-      chainStorage: true, // to publish boardAux info for NFT brand
+      chainStorage: true,
       chainTimerService: true,
       startUpgradable: true, // to start contract and save adminFacet
-      zoe: true, // to get contract terms, including issuer/brand
     },
     installation: { consume: { chainTimer: true } },
-    issuer: {
-      consume: { IST: true },
-      produce: { IST: true },
-    },
-    brand: {
-      consume: { IST: true },
-      produce: { IST: true },
-    },
     instance: { produce: { chainTimer: true } },
   },
 };
